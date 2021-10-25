@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Weather Tracker</title>
+    <!-- <link rel="stylesheet" type="text/css" href="../public/index.css" media="screen" /> -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image: url('https://images.freeimages.com/images/large-previews/ffd/stormy-weather-1508939.jpg');
+            min-height: 100vh;
+            background-repeat: no-repeat;
+            background-size: cover;
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+
+<body>
+    <div class="container bg-light p-5 rounded border border-dark">
+        <div class="container w-90 d-flex flex-column align-items-center justify-content-center">
+            <h1>Weather Tracker</h1>
+            <p>Here you can get a five day forecast for a city and log your own records on the end.</p>
+            <form class="d-flex flex-column align-items-center" action="#" id="form1">
+                <label for="city">City:</label>
+                <input onkeypress="return (event.charCode > 64 && 
+                event.charCode < 91) || (event.charCode > 96 && event.charCode < 123)" type="text" id="city"><br>
+                <input type="submit" value="Submit" id="submit1">
+            </form>
+        </div><br><br>
+        <div class="container w-90 d-flex flex-row justify-content-center flex-wrap" id="cardContainer">
+        </div>
+    </div>
+</body>
+
+<script>
+    $(document).ready(function () {
+        $('button').removeClass('hover');
+
+        // Defining global variables.
+        cityList = [];
+        const weekdayLookup = [
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+        ];
+
+        // Collecting city input.
+        $('#form1').on('submit', function (e) {
+            e.preventDefault();
+            const city = $(this).find("#city").val();
+            const cityClass = new City(city);
+            cityList.push(cityClass);
+        });
+
+        // Some utility functions.
+        function sortByKey(array, key) {
+            return array.sort(function (a, b) {
+                var x = a[key]; var y = b[key];
+                return ((x < y) ? -1 : ((x > y) ? 1 : 0));
+            });
+        }
+        function calculateMean(arr) {
+            let total = 0;
+            for (let i = 0; i < arr.length; i++) {
+                total += arr[i];
+            }
+            return total / arr.length;
+        };
+        function calculateMode(arr) {
+            const mode = {};
+            let max = 0, count = 0;
+
+            for (let i = 0; i < arr.length; i++) {
+                const item = arr[i];
+
+                if (mode[item]) {
+                    mode[item]++;
+                } else {
+                    mode[item] = 1;
+                }
+
+                if (count < mode[item]) {
+                    max = item;
+                    count = mode[item];
+                }
+            }
+
+            return max;
+        };
+        function openWeatherAPIRequest(city) {
+            const appid = '1439e1d83fbff9a18d22b12f7385a7ea';
+            return new Promise(function (resolve, reject) {
+                if (cityList.find(cityObject => {
+                    return cityObject.name === city;
+                })) {
+                    // Error check
+                    alert("You've already searched this city.");
+                    reject(error);
+                }
+                const request = new XMLHttpRequest();
+                request.open("GET", `http://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${appid}`, true);
+                request.addEventListener("load", function () {
+                    if (request.status >= 200 && request.status < 400) {
+                        const data = JSON.parse(request.responseText);
+                        resolve(data);
+                    } else {
+                        // Error check
+                        alert("The city you entered could not be retrieved from the database.");
+                        reject(error);
+                    }
+                });
+                request.send();
+            });
+        }
+        async function getLocation5DayForecast(city) {
+            const data = await openWeatherAPIRequest(city);
+            const extractedData = data.list.map((value) => {
+                return {
+                    dt_txt: value.dt_txt,
+                    temp: value.main.temp,
+                    day: weekdayLookup[new Date(value.dt_txt).getDay()],
+                }
+            });
+            const groupedData = extractedData.reduce((acc, value) => {
+                if (!acc[value.day]) {
+                    acc[value.day] = [];
+                }
+                acc[value.day].push(value);
+                return acc;
+            }, {});
+
+            return groupedData;
+        }
+        async function getTimeStamp() {
+            const date = await new Date;
+            return date.getTime();
+        }
+        Date.prototype.addDays = function (days) {
+            let date = new Date(this.valueOf());
+            date.setDate(date.getDate() + days);
+            return date;
+        }
+
+        // Defining the class.
+        class City {
+            constructor(city) {
+                this.name = city;
+                this.forecast = [];
+
+                this.datetimeRetrieved = null;
+                getLocation5DayForecast(city).then((value) => {
+                    this.forecast = value;
+                    this._renderSelf();
+                });
+                getTimeStamp().then((value) => {
+                    this.datetimeRetrieved = value;
+                });
+            }
+
+            insertTemperatureValue(temperature) {
+                const forecast = this.forecast;
+                const key = Object.keys(forecast)[Object.keys(forecast).length - 1];
+
+                const lastDay = forecast[key];
+                const lastEntry = sortByKey(lastDay, 'dt_txt')[lastDay.length - 1];
+                const lastEntryDateTime = new Date(lastEntry.dt_txt);
+                if (lastEntryDateTime.getHours() < 21) {
+                    this.forecast[key].push({
+                        dt_txt: new Date(lastEntryDateTime.setHours(lastEntryDateTime.getHours() + 3)).toUTCString(),
+                        temp: parseInt(temperature) + 273.15,
+                        day: key,
+                    });
+                } else {
+                    let lastDayIndex = weekdayLookup.indexOf(key) % 6;
+                    const newKey = weekdayLookup[lastDayIndex + 1];
+                    // Error check
+                    if (forecast[newKey]) {
+                        alert("Unfortunately you can't track anymore values using this build.");
+                        return;
+                    }
+                    const date = lastEntryDateTime.addDays(1);
+                    date.setHours(0);
+                    date.setMinutes(0);
+                    date.setSeconds(0);
+                    this.forecast[newKey] = [{
+                        dt_txt: date.toUTCString(),
+                        temp: parseInt(temperature) + 273.15,
+                        day: weekdayLookup[lastDayIndex + 1],
+                    }]
+                }
+                this._renderSelf();
+            }
+
+            _renderSelf() {
+                const HTMLname = this._renderName();
+                const HTMLforecast = this._renderForecast();
+                const HTMLstatistics = this._renderStatistics();
+
+                const datetimeRetrieved = JSON.parse(JSON.stringify(this.datetimeRetrieved));
+
+                $(`#card${datetimeRetrieved}`).remove();
+
+                const HTMLself = `
+                    <div class="card m-2 p-2" id="card${datetimeRetrieved}">\n
+                        <div class="card-header table-bordered d-flex flex-row justify-content-between align-items-start pt-3 mb-0">\n
+                            ${HTMLname}\n
+                        </div>\n
+                        <form class="d-flex flex-column align-items-center mt-0" action="#"" id="form${datetimeRetrieved}">\n
+                            <table class="table table-bordered"><br>\n
+                                <thead class="bg-light">\n
+                                    <tr>\n
+                                        <th>Day</th>\n<th>Temperatures (°C)</th>\n
+                                    </tr>\n
+                                </thead>\n
+                                <tbody>\n
+                                    ${HTMLforecast}\n
+                                </tbody>\n
+                            </table><br>\n
+                            <label for="temperature">Add a temperature value (°C):</label>\n
+                            <input type="number" max="60" min="-30" id="temperature${datetimeRetrieved}" style="width: 50px; text-align:center;"><br>\n
+                            <input type="submit" value="Add" id="submit${datetimeRetrieved}"><br>\n
+                            ${HTMLstatistics}\n
+                        </form>\n
+                    </div>`;
+
+                $("#cardContainer").append($.parseHTML(HTMLself));
+                $(`#form${datetimeRetrieved}`).on('submit', function (e) {
+                    e.preventDefault();
+                    const temperature = $(`#temperature${datetimeRetrieved}`).val()
+                    // Error check
+                    if (!temperature) {
+                        alert("Please enter a temperature value.");
+                        return;
+                    }
+                    cityList.find(cityObject => {
+                        return cityObject.datetimeRetrieved === datetimeRetrieved;
+                    }).insertTemperatureValue(temperature);
+                }
+                );
+                $(`#close${datetimeRetrieved}`).on('click', function (e) {
+                    e.preventDefault();
+                    $(`#card${datetimeRetrieved}`).remove();
+                }
+                );
+
+                return self;
+            }
+
+            _renderName() {
+                const datetimeRetrieved = JSON.parse(JSON.stringify(this.datetimeRetrieved));
+                const HTMLString = `
+                    <h6>${this.name}&emsp;</h6>\n
+                    <button id="close${datetimeRetrieved}" class="border-0 bg-light h6 text-danger">X</button>
+                `;
+
+                return HTMLString;
+            }
+
+            _renderForecast() {
+                const forecast = this.forecast;
+                let HTMLString = '';
+                for (const key in forecast) {
+                    HTMLString = HTMLString + `<tr>\n`;
+                    // Add day
+                    HTMLString = HTMLString + `<td style='vertical-align: top;'>${key}</td>\n`;
+                    // Add temperatures
+                    HTMLString = HTMLString + `<td style='vertical-align: top;'>`;
+
+                    forecast[key].forEach((time, index) => {
+                        let hours = new Date(time.dt_txt).getHours();
+                        let suffix = '';
+                        if (hours === 0) {
+                            hours = 12
+                            suffix = 'am'
+                        } else if (hours === 12) {
+                            hours = 12
+                            suffix = 'pm'
+                        } else {
+                            if (hours > 12) {
+                                hours = hours - 12;
+                                suffix = 'pm'
+                            } else[
+                                suffix = 'am'
+                            ]
+                        }
+                        HTMLString = HTMLString + `${hours}${suffix}: ${Math.round(time.temp - 273.15)}°C${(index !== forecast[key].length - 1) ? ' ┃ ' : ''}`;
+                    })
+                    HTMLString = HTMLString + '</td>\n';
+                    HTMLString = HTMLString + '</tr>';
+                }
+
+                return HTMLString;
+            }
+
+            _renderStatistics() {
+                const forecast = this.forecast;
+
+                // Get list of temperatures
+                const temperatures = [];
+                for (const key in forecast) {
+                    forecast[key].forEach((time) => {
+                        temperatures.push(time.temp - 273.15);
+                    })
+                }
+
+                // Calculate statistics
+                const max = Math.round(Math.max(...temperatures));
+                const min = Math.round(Math.min(...temperatures));
+                const mean = Math.round(calculateMean(temperatures));
+                const mode = Math.round(calculateMode(temperatures));
+
+                let HTMLString = '';
+                HTMLString = HTMLString + `<p class="list-group-item text-center">Min: ${min}°C ┃ Max: ${max}°C ┃ Mean: ${mean}°C ┃ Mode: ${mode}°C</p>`;
+
+                return HTMLString;
+            }
+
+
+        }
+    });
+</script>
+
+</html>
